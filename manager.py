@@ -187,8 +187,10 @@ class Manager:
         else:
             return self.pick_players_no_priority(num)
 
-    def run_rounds(self):
+    def run_rounds(self, rounds):
+        self.rounds = rounds
         while (self.rounds < 0) or (self.round_count < self.rounds):
+            self.refresh_players()
             num_players = random.randint(2, min(self.players_max, len(self.players)))
             players = self.pick_players(num_players)
             size_w = random.randint((self.size_min / 5), (self.size_max / 5)) * 5
@@ -197,6 +199,15 @@ class Manager:
             print ("running match...\n")
             self.run_round(players, size_w, size_h, seed)
             self.round_count += 1
+
+    def refresh_players(self):
+        player_records = self.db.retrieve("select * from players where active > 0")
+        players = [parse_player_record(player) for player in player_records]
+        if len(players) < 2:
+            print("Not enough players for a game. Need at least " + str(self.players_min) + ", only have " + str(len(players)))
+            print("use the -h flag to get help")
+            sys.os.exit(-1)
+        self.players = players
 
     def add_player(self, name, path):
         p = self.db.get_player((name,))
@@ -369,15 +380,7 @@ class Commandline:
         return True
 
     def run_matches(self, rounds):
-        player_records = self.manager.db.retrieve("select * from players where active > 0")
-        players = [parse_player_record(player) for player in player_records]
-        if len(players) < 2:
-            print("Not enough players for a game. Need at least " + str(self.manager.players_min) + ", only have " + str(len(players)))
-            print("use the -h flag to get help")
-        else:
-            self.manager.players = players
-            self.manager.rounds = rounds
-            self.manager.run_rounds()
+        self.manager.run_rounds(rounds)
 
     def player_list_sql(self):
         if self.exclude_inactive:
