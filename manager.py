@@ -1,12 +1,12 @@
 #!/bin/python3
 #  Copyright 2016 Jude Hungerford
-#  
+#
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at
-#  
+#
 #      http://www.apache.org/licenses/LICENSE-2.0
-#  
+#
 #      Unless required by applicable law or agreed to in writing, software
 #      distributed under the License is distributed on an "AS IS" BASIS,
 #      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -103,7 +103,7 @@ class Match:
             if not os.path.exists(replay_dir):
                 os.makedirs(replay_dir)
             shutil.move(self.replay_file, replay_dir)
-        else: 
+        else:
             print("Deleting replay")
             os.remove(self.replay_file)
 
@@ -204,7 +204,7 @@ class Manager:
             self.db.add_player(name, path)
         else:
             print ("Bot name %s already used, no bot added" %(name))
-            
+
 class Database:
     def __init__(self, filename=db_filename):
         self.db = sqlite3.connect(filename)
@@ -231,22 +231,22 @@ class Database:
             pass
 
     def update_deferred( self, sql, tup=() ):
-        cursor = self.db.cursor()        
+        cursor = self.db.cursor()
         cursor.execute(sql,tup)
-        
+
     def update( self, sql, tup=() ):
         self.update_deferred(sql,tup)
         self.db.commit()
-        
+
     def retrieve( self, sql, tup=() ):
-        cursor = self.db.cursor()        
+        cursor = self.db.cursor()
         cursor.execute(sql,tup)
         return cursor.fetchall()
 
     def add_match( self, match ):
         self.latest += 1
         players = ", ".join(match.paths)
-        self.update("insert into games values(?,?,?,?,?,?)", (self.latest,players,match.map_seed,self.now(),turns)) 
+        self.update("insert into games values(?,?,?,?,?,?)", (self.latest,players,match.map_seed,self.now(),turns))
 
     def add_player(self, name, path):
         self.update("insert into players values(?,?,?,?,?,?,?,?,?,?)", (None, name, path, self.now(), 1000, 0.0, 50.0, 50.0/3.0, 0, True))
@@ -257,22 +257,22 @@ class Database:
     def get_player( self, names ):
         sql = "select * from players where name=?"
         for n in names[1:]:
-            sql += " or name=?" 
+            sql += " or name=?"
         return self.retrieve(sql, names )
-        
+
     def save_player(self, player):
         self.update_player_skill(player.name, player.skill, player.mu, player.sigma)
 
     def update_player_skill(self, name, skill, mu, sigma ):
         self.update("update players set ngames=ngames+1,lastseen=?,skill=?,mu=?,sigma=? where name=?", (self.now(), skill, mu, sigma, name))
-	
+
     def update_player_rank( self, name, rank ):
         self.update("update players set rank=? where name=?", (rank, name))
 
     def update_player_ranks(self):
         for i, p in enumerate(self.retrieve("select name from players order by skill desc",())):
             self.update_player_rank( p[0], i+1 )
-        
+
     def activate_player(self, name):
         self.update("update players set active=? where name=?", (1, name))
 
@@ -301,65 +301,63 @@ class Player:
 def parse_player_record (player):
     (player_id, name, path, last_seen, rank, skill, mu, sigma, ngames, active) = player
     return Player(name, path, last_seen, rank, skill, mu, sigma, ngames, active)
-    
+
 
 class Commandline:
     def __init__(self):
         self.manager = Manager(halite_command)
-        self.cmds = None
         self.parser = argparse.ArgumentParser()
         self.no_args = False
         self.exclude_inactive = False
-        self.parser.add_argument("-A", "--addBot", dest="addBot",
-                                 action = "store", default = "",
-                                 help = "Add a new bot with a name")
 
-        self.parser.add_argument("-D", "--deleteBot", dest="deleteBot",
-                                 action = "store", default = "",
-                                 help = "Delete the named bot")
+        subparsers = self.parser.add_subparsers(title = 'commands', dest = 'command')
 
-        self.parser.add_argument("-a", "--activateBot", dest="activateBot",
-                                 action = "store", default = "",
-                                 help = "Activate the named bot")
+        addParser = subparsers.add_parser('add', description = "Add a new bot with a name")
+        addParser.add_argument('name', help = "Name of the bot")
+        addParser.add_argument('botPath', help = "Specify the path for a new bot")
+        addParser.set_defaults(func=self.act_add)
 
-        self.parser.add_argument("-d", "--deactivateBot", dest="deactivateBot",
-                                 action = "store", default = "",
-                                 help = "Deactivate the named bot")
+        deleteParser = subparsers.add_parser('delete', description = "Delete the named bot")
+        deleteParser.add_argument('name', help = "Name of the bot")
+        deleteParser.set_defaults(func=self.act_delete)
 
-        self.parser.add_argument("-p", "--botPath", dest="botPath",
-                                 action = "store", default = "",
-                                 help = "Specify the path for a new bot")
+        activateParser = subparsers.add_parser('activate', description = "Activate the named bot")
+        activateParser.add_argument('name', help = "Name of the bot")
+        activateParser.set_defaults(func=self.act_activate)
 
-        self.parser.add_argument("-r", "--showRanks", dest="showRanks",
-                                 action = "store_true", default = False,
-                                 help = "Show a list of all bots, ordered by skill")
+        deactivateParser = subparsers.add_parser('deactivate', description = "Deactivate the named bot")
+        deactivateParser.add_argument('name', help = "Name of the bot")
+        deactivateParser.set_defaults(func=self.act_deactivate)
 
-        self.parser.add_argument("-t", "--showRanksTsv", dest="showRanksTsv",
+        ranksParser = subparsers.add_parser('ranks', description = "Show a list of all bots, ordered by skill")
+        ranksParser.add_argument("-t", "--tsv", dest="tsv",
                                  action = "store_true", default = False,
                                  help = "Show a list of all bots ordered by skill, with headings in TSV format like the rest of the data")
-
-        self.parser.add_argument("-m", "--match", dest="match",
-                                 action = "store_true", default = False,
-                                 help = "Run a single match")
-        self.parser.add_argument("-f", "--forever", dest="forever",
-                                 action = "store_true", default = False,
-                                 help = "Run games forever (or until interrupted)")
-        self.parser.add_argument("-n", "--no-replays", dest="deleteReplays",
-                                 action = "store_true", default = False,
-                                 help = "Do not store replays")
-
-        self.parser.add_argument("-e", "--equal-priority", dest="equalPriority",
-                                 action = "store_true", default = False,
-                                 help = "Equal priority for all active bots (otherwise highest sigma will always be selected)")
-
-        self.parser.add_argument("-E", "--exclude-inactive", dest="excludeInactive",
+        ranksParser.add_argument("-E", "--exclude-inactive", dest="excludeInactive",
                                  action = "store_true", default = False,
                                  help = "Exclude inactive bots from ranking table")
+        ranksParser.set_defaults(func=self.act_ranks)
+
+        matchParser = subparsers.add_parser('match', description = "Run a single match")
+        matchParser.add_argument("-f", "--forever", dest="forever",
+                                 action = "store_true", default = False,
+                                 help = "Run games forever (or until interrupted)")
+        matchParser.add_argument("-n", "--no-replays", dest="deleteReplays",
+                                 action = "store_true", default = False,
+                                 help = "Do not store replays")
+        matchParser.add_argument("-e", "--equal-priority", dest="equalPriority",
+                                 action = "store_true", default = False,
+                                 help = "Equal priority for all active bots (otherwise highest sigma will always be selected)")
+        matchParser.set_defaults(func=self.act_match)
 
     def parse(self, args):
         if len(args) == 0:
             self.no_args = True
-        self.cmds = self.parser.parse_args(args)
+        self.args = self.parser.parse_args(args)
+        if args:
+            self.args.func(self.args)
+        else:
+            self.parser.print_help()
 
     def add_bot(self, bot, path):
         self.manager.add_player(bot, path)
@@ -387,60 +385,53 @@ class Commandline:
         else:
             return "select * from players order by skill desc"
 
-    def act(self):
-        if self.cmds.deleteReplays:
-            print("keep_replays = False")
-            self.manager.keep_replays = False
-        if self.cmds.equalPriority:
-            print("priority_sigma = False")
-            self.manager.priority_sigma = False
-        if self.cmds.excludeInactive:
+    def act_add(self, args):
+        print("Adding new bot %s..." %(args.name))
+        if self.valid_botfile(args.botPath):
+            self.add_bot(args.name, args.botPath)
+
+    def act_delete(self, args):
+        print("Deleting bot %s..." %(args.name))
+        self.delete_bot(args.name)
+
+    def act_activate(self, args):
+        print("Activating bot %s..." %(args.name))
+        self.manager.db.activate_player(args.name)
+
+    def act_deactivate(self, args):
+        print("Deactivating bot %s..." %(args.name))
+        self.manager.db.deactivate_player(args.name)
+
+    def act_ranks(self, args):
+        if args.excludeInactive:
             print("exclude_inactive = True")
             self.exclude_inactive = True
 
-        if self.cmds.addBot != "":
-            print("Adding new bot...")
-            if self.cmds.botPath == "":
-                print ("You must specify the path for the new bot")
-            elif self.valid_botfile(self.cmds.botPath):
-                self.add_bot(self.cmds.addBot, self.cmds.botPath)
-        
-        elif self.cmds.deleteBot != "":
-            print("Deleting bot...")
-            self.delete_bot(self.cmds.deleteBot)
-        
-        elif self.cmds.activateBot != "":
-            print("Activating bot %s" %(self.cmds.activateBot))
-            self.manager.db.activate_player(self.cmds.activateBot)
-        
-        elif self.cmds.deactivateBot != "":
-            print("Deactivating bot %s" %(self.cmds.deactivateBot))
-            self.manager.db.deactivate_player(self.cmds.deactivateBot)
-        
-        elif self.cmds.showRanks:
+        if not args.tsv:
             print ("%s\t\t%s\t\t%s\t%s\t\t%s\t\t%s\t\t%s\t%s" % ("name", "last_seen", "rank", "skill", "mu", "sigma", "ngames", "active"))
             sql = self.player_list_sql()
             for p in self.manager.db.retrieve(sql):
                 print(str(parse_player_record(p)))
-        
-        elif self.cmds.showRanksTsv:
+        else:
             print ("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s" % ("name", "last_seen", "rank", "skill", "mu", "sigma", "ngames", "active"))
             sql = self.player_list_sql()
             for p in self.manager.db.retrieve(sql):
                 print(str(parse_player_record(p)))
-        
-        elif self.cmds.match:
-            print ("Running a single match.")
-            self.run_matches(1)
-        
-        elif self.cmds.forever:
+
+    def act_match(self, args):
+        if args.deleteReplays:
+            print("keep_replays = False")
+            self.manager.keep_replays = False
+        if args.equalPriority:
+            print("priority_sigma = False")
+            self.manager.priority_sigma = False
+
+        if args.forever:
             print ("Running matches until interrupted. Press Ctrl+C to stop.")
             self.run_matches(-1)
-        
-        elif self.no_args:
-            self.parser.print_help()
+        else:
+            print ("Running a single match.")
+            self.run_matches(1)
 
 cmdline = Commandline()
 cmdline.parse(sys.argv[1:])
-cmdline.act()
-
